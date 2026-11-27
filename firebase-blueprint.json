@@ -1,0 +1,360 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user profile and active workspace selection",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "phone": { "type": "string" },
+        "activeBusinessId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "email", "createdAt", "updatedAt"]
+    },
+    "Business": {
+      "title": "Business",
+      "description": "Tenant business organization profile and role settings",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "industry": { "type": "string" },
+        "currency": { "type": "string" },
+        "taxRate": { "type": "number" },
+        "address": { "type": "string" },
+        "email": { "type": "string" },
+        "activeRole": { "type": "string", "enum": ["SUPER_ADMIN", "BUSINESS_OWNER", "MANAGER", "EMPLOYEE", "ACCOUNTANT", "SALES_REP"] },
+        "demoSeeded": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "industry", "currency", "activeRole", "demoSeeded", "createdAt", "updatedAt"]
+    },
+    "CrmLead": {
+      "title": "CrmLead",
+      "description": "Sales pipeline lead and deal tracking",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "company": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "source": { "type": "string" },
+        "stage": { "type": "string", "enum": ["NEW", "CONTACTED", "QUALIFIED", "PROPOSAL", "WON", "LOST"] },
+        "dealValue": { "type": "number" },
+        "nextFollowUp": { "type": "string" },
+        "notes": { "type": "string" },
+        "assignedTo": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "name", "company", "stage", "dealValue", "createdAt", "updatedAt"]
+    },
+    "CrmContact": {
+      "title": "CrmContact",
+      "description": "Customer contact and company directory record",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "company": { "type": "string" },
+        "roleTitle": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE", "VIP"] },
+        "activityHistory": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "name", "company", "status", "createdAt", "updatedAt"]
+    },
+    "FinanceRecord": {
+      "title": "FinanceRecord",
+      "description": "Income, expense, and payment ledger transaction",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["INCOME", "EXPENSE"] },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "dateStr": { "type": "string" },
+        "paymentMethod": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "title", "type", "category", "amount", "dateStr", "createdAt", "updatedAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Customer invoice or estimate/quotation",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "docType": { "type": "string", "enum": ["INVOICE", "ESTIMATE"] },
+        "amount": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["DRAFT", "SENT", "PENDING", "PAID", "OVERDUE", "ACCEPTED"] },
+        "dueDate": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "invoiceNumber", "customerName", "docType", "amount", "status", "dueDate", "createdAt", "updatedAt"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "HR employee profile, attendance, leave, payroll, and performance",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "department": { "type": "string" },
+        "jobTitle": { "type": "string" },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "BUSINESS_OWNER", "MANAGER", "EMPLOYEE", "ACCOUNTANT", "SALES_REP"] },
+        "salary": { "type": "number" },
+        "attendanceStatus": { "type": "string", "enum": ["PRESENT", "REMOTE", "ON_LEAVE", "ABSENT"] },
+        "leaveBalanceDays": { "type": "integer" },
+        "leaveRequestStatus": { "type": "string", "enum": ["NONE", "PENDING", "APPROVED", "REJECTED"] },
+        "performanceScore": { "type": "integer" },
+        "payrollStatus": { "type": "string", "enum": ["PAID", "PENDING"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "fullName", "department", "jobTitle", "role", "salary", "attendanceStatus", "leaveBalanceDays", "leaveRequestStatus", "performanceScore", "payrollStatus", "createdAt", "updatedAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Business project with team members, deadline, and progress",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED"] },
+        "deadline": { "type": "string" },
+        "memberNames": { "type": "string" },
+        "progressPercent": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "name", "status", "deadline", "progressPercent", "createdAt", "updatedAt"]
+    },
+    "ProjectTask": {
+      "title": "ProjectTask",
+      "description": "Project task, subtasks summary, Kanban stage, and reminder",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "title": { "type": "string" },
+        "subtasksSummary": { "type": "string" },
+        "assignee": { "type": "string" },
+        "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "URGENT"] },
+        "kanbanColumn": { "type": "string", "enum": ["TODO", "IN_PROGRESS", "REVIEW", "DONE"] },
+        "dueDate": { "type": "string" },
+        "reminderActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "projectId", "projectName", "title", "priority", "kanbanColumn", "dueDate", "reminderActive", "createdAt", "updatedAt"]
+    },
+    "InventoryProduct": {
+      "title": "InventoryProduct",
+      "description": "Inventory SKU, stock level, supplier, and reorder threshold",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "unitPrice": { "type": "number" },
+        "stockQty": { "type": "integer" },
+        "reorderLevel": { "type": "integer" },
+        "lastMovementNote": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "sku", "name", "category", "supplierName", "unitPrice", "stockQty", "reorderLevel", "createdAt", "updatedAt"]
+    },
+    "PurchaseOrder": {
+      "title": "PurchaseOrder",
+      "description": "Supplier purchase order for inventory replenishment",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "poNumber": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "quantity": { "type": "integer" },
+        "totalCost": { "type": "number" },
+        "status": { "type": "string", "enum": ["ORDERED", "RECEIVED", "CANCELLED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "poNumber", "supplierName", "productName", "quantity", "totalCost", "status", "createdAt", "updatedAt"]
+    },
+    "SalesOrder": {
+      "title": "SalesOrder",
+      "description": "Customer sales order with discounts and monthly analytics tag",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "orderNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "productName": { "type": "string" },
+        "quantity": { "type": "integer" },
+        "subtotal": { "type": "number" },
+        "discountPercent": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "monthLabel": { "type": "string" },
+        "status": { "type": "string", "enum": ["PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "orderNumber", "customerName", "productName", "quantity", "subtotal", "discountPercent", "totalAmount", "monthLabel", "status", "createdAt", "updatedAt"]
+    },
+    "MarketingCampaign": {
+      "title": "MarketingCampaign",
+      "description": "Email and social marketing campaign metrics",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "name": { "type": "string" },
+        "channel": { "type": "string", "enum": ["EMAIL", "SOCIAL_MEDIA", "PAID_ADS", "SEO"] },
+        "status": { "type": "string", "enum": ["DRAFT", "ACTIVE", "PAUSED", "COMPLETED"] },
+        "budget": { "type": "number" },
+        "impressions": { "type": "integer" },
+        "clicks": { "type": "integer" },
+        "conversions": { "type": "integer" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "name", "channel", "status", "budget", "impressions", "clicks", "conversions", "createdAt", "updatedAt"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "Customer support desk ticket and resolution tracking",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "ticketNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "status": { "type": "string", "enum": ["OPEN", "IN_PROGRESS", "WAITING", "RESOLVED", "CLOSED"] },
+        "assignedAgent": { "type": "string" },
+        "resolutionNotes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "ticketNumber", "customerName", "subject", "priority", "status", "createdAt", "updatedAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Audit log and notification center event",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "businessId": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "module": { "type": "string" },
+        "action": { "type": "string" },
+        "summary": { "type": "string" },
+        "unread": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "businessId", "actorName", "actorRole", "module", "action", "summary", "unread", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profile and workspace selection"
+    },
+    "/users/{userId}/businesses/{businessId}": {
+      "schema": { "$ref": "#/entities/Business" },
+      "description": "User-owned business organization records"
+    },
+    "/users/{userId}/businesses/{businessId}/crm_leads/{leadId}": {
+      "schema": { "$ref": "#/entities/CrmLead" },
+      "description": "CRM sales pipeline leads and deals"
+    },
+    "/users/{userId}/businesses/{businessId}/crm_contacts/{contactId}": {
+      "schema": { "$ref": "#/entities/CrmContact" },
+      "description": "CRM customer contacts and companies"
+    },
+    "/users/{userId}/businesses/{businessId}/finance_records/{recordId}": {
+      "schema": { "$ref": "#/entities/FinanceRecord" },
+      "description": "Finance income, expense, and payment entries"
+    },
+    "/users/{userId}/businesses/{businessId}/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Finance invoices and estimates"
+    },
+    "/users/{userId}/businesses/{businessId}/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "HR employee records, attendance, leave, payroll, and performance"
+    },
+    "/users/{userId}/businesses/{businessId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Projects and milestones"
+    },
+    "/users/{userId}/businesses/{businessId}/project_tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/ProjectTask" },
+      "description": "Project Kanban tasks and reminders"
+    },
+    "/users/{userId}/businesses/{businessId}/inventory_products/{productId}": {
+      "schema": { "$ref": "#/entities/InventoryProduct" },
+      "description": "Inventory catalog, stock levels, and suppliers"
+    },
+    "/users/{userId}/businesses/{businessId}/purchase_orders/{poId}": {
+      "schema": { "$ref": "#/entities/PurchaseOrder" },
+      "description": "Inventory supplier purchase orders"
+    },
+    "/users/{userId}/businesses/{businessId}/sales_orders/{orderId}": {
+      "schema": { "$ref": "#/entities/SalesOrder" },
+      "description": "Sales orders and monthly analytics records"
+    },
+    "/users/{userId}/businesses/{businessId}/marketing_campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/MarketingCampaign" },
+      "description": "Marketing email and social campaigns"
+    },
+    "/users/{userId}/businesses/{businessId}/support_tickets/{ticketId}": {
+      "schema": { "$ref": "#/entities/SupportTicket" },
+      "description": "Customer support desk tickets"
+    },
+    "/users/{userId}/businesses/{businessId}/activity_logs/{logId}": {
+      "schema": { "$ref": "#/entities/ActivityLog" },
+      "description": "User activity logs and notification items"
+    }
+  }
+}

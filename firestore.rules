@@ -1,0 +1,659 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Shared Security & Validation Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isReqStr(data, key, minLen, maxLen) {
+      return (key in data) && data[key] is string && data[key].size() >= minLen && data[key].size() <= maxLen;
+    }
+
+    function isOptStr(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isNumRange(data, key, minVal, maxVal) {
+      return (key in data) && (data[key] is int || data[key] is float) && data[key] >= minVal && data[key] <= maxVal;
+    }
+
+    function isIntRange(data, key, minVal, maxVal) {
+      return (key in data) && data[key] is int && data[key] >= minVal && data[key] <= maxVal;
+    }
+
+    function businessExists(userId, businessId) {
+      return exists(/databases/$(database)/documents/users/$(userId)/businesses/$(businessId)) ||
+             existsAfter(/databases/$(database)/documents/users/$(userId)/businesses/$(businessId));
+    }
+
+    // --- Entity Validation Helpers ---
+    function isValidUserProfile(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'displayName', 1, 100) &&
+             isReqStr(data, 'email', 3, 150) &&
+             isOptStr(data, 'jobTitle', 100) &&
+             isOptStr(data, 'phone', 40) &&
+             isOptStr(data, 'activeBusinessId', 128);
+    }
+
+    function isValidBusiness(data) {
+      return isReqStr(data, 'ownerId', 1, 128) &&
+             isReqStr(data, 'name', 1, 100) &&
+             isReqStr(data, 'industry', 1, 80) &&
+             isReqStr(data, 'currency', 1, 10) &&
+             (!('taxRate' in data) || isNumRange(data, 'taxRate', 0, 100)) &&
+             isOptStr(data, 'address', 200) &&
+             isOptStr(data, 'email', 150) &&
+             (data.activeRole in ['SUPER_ADMIN', 'BUSINESS_OWNER', 'MANAGER', 'EMPLOYEE', 'ACCOUNTANT', 'SALES_REP']) &&
+             (data.demoSeeded is bool);
+    }
+
+    function isValidCrmLead(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'name', 1, 120) &&
+             isReqStr(data, 'company', 1, 120) &&
+             isOptStr(data, 'email', 150) &&
+             isOptStr(data, 'phone', 40) &&
+             isOptStr(data, 'source', 60) &&
+             (data.stage in ['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL', 'WON', 'LOST']) &&
+             isNumRange(data, 'dealValue', 0, 1000000000) &&
+             isOptStr(data, 'nextFollowUp', 60) &&
+             isOptStr(data, 'notes', 1000) &&
+             isOptStr(data, 'assignedTo', 120);
+    }
+
+    function isValidCrmContact(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'name', 1, 120) &&
+             isReqStr(data, 'company', 1, 120) &&
+             isOptStr(data, 'roleTitle', 100) &&
+             isOptStr(data, 'email', 150) &&
+             isOptStr(data, 'phone', 40) &&
+             (data.status in ['ACTIVE', 'INACTIVE', 'VIP']) &&
+             isOptStr(data, 'activityHistory', 1000);
+    }
+
+    function isValidFinanceRecord(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'title', 1, 150) &&
+             (data.type in ['INCOME', 'EXPENSE']) &&
+             isReqStr(data, 'category', 1, 80) &&
+             isNumRange(data, 'amount', 0, 1000000000) &&
+             isReqStr(data, 'dateStr', 1, 40) &&
+             isOptStr(data, 'paymentMethod', 60) &&
+             isOptStr(data, 'notes', 1000);
+    }
+
+    function isValidInvoice(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'invoiceNumber', 1, 60) &&
+             isReqStr(data, 'customerName', 1, 120) &&
+             (data.docType in ['INVOICE', 'ESTIMATE']) &&
+             isNumRange(data, 'amount', 0, 1000000000) &&
+             (!('taxAmount' in data) || isNumRange(data, 'taxAmount', 0, 1000000000)) &&
+             (data.status in ['DRAFT', 'SENT', 'PENDING', 'PAID', 'OVERDUE', 'ACCEPTED']) &&
+             isReqStr(data, 'dueDate', 1, 40) &&
+             isOptStr(data, 'notes', 1000);
+    }
+
+    function isValidEmployee(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'fullName', 1, 120) &&
+             isOptStr(data, 'email', 150) &&
+             isReqStr(data, 'department', 1, 80) &&
+             isReqStr(data, 'jobTitle', 1, 100) &&
+             (data.role in ['SUPER_ADMIN', 'BUSINESS_OWNER', 'MANAGER', 'EMPLOYEE', 'ACCOUNTANT', 'SALES_REP']) &&
+             isNumRange(data, 'salary', 0, 100000000) &&
+             (data.attendanceStatus in ['PRESENT', 'REMOTE', 'ON_LEAVE', 'ABSENT']) &&
+             isIntRange(data, 'leaveBalanceDays', 0, 365) &&
+             (data.leaveRequestStatus in ['NONE', 'PENDING', 'APPROVED', 'REJECTED']) &&
+             isIntRange(data, 'performanceScore', 0, 100) &&
+             (data.payrollStatus in ['PAID', 'PENDING']);
+    }
+
+    function isValidProject(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'name', 1, 150) &&
+             isOptStr(data, 'description', 1000) &&
+             (data.status in ['PLANNING', 'ACTIVE', 'ON_HOLD', 'COMPLETED']) &&
+             isReqStr(data, 'deadline', 1, 40) &&
+             isOptStr(data, 'memberNames', 500) &&
+             isIntRange(data, 'progressPercent', 0, 100);
+    }
+
+    function isValidProjectTask(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'projectId', 1, 128) &&
+             isReqStr(data, 'projectName', 1, 150) &&
+             isReqStr(data, 'title', 1, 150) &&
+             isOptStr(data, 'subtasksSummary', 500) &&
+             isOptStr(data, 'assignee', 120) &&
+             (data.priority in ['LOW', 'MEDIUM', 'HIGH', 'URGENT']) &&
+             (data.kanbanColumn in ['TODO', 'IN_PROGRESS', 'REVIEW', 'DONE']) &&
+             isReqStr(data, 'dueDate', 1, 40) &&
+             (data.reminderActive is bool);
+    }
+
+    function isValidInventoryProduct(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'sku', 1, 60) &&
+             isReqStr(data, 'name', 1, 150) &&
+             isReqStr(data, 'category', 1, 80) &&
+             isReqStr(data, 'supplierName', 1, 120) &&
+             isNumRange(data, 'unitPrice', 0, 100000000) &&
+             isIntRange(data, 'stockQty', 0, 100000000) &&
+             isIntRange(data, 'reorderLevel', 0, 100000000) &&
+             isOptStr(data, 'lastMovementNote', 300);
+    }
+
+    function isValidPurchaseOrder(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'poNumber', 1, 60) &&
+             isReqStr(data, 'supplierName', 1, 120) &&
+             isOptStr(data, 'productId', 128) &&
+             isReqStr(data, 'productName', 1, 150) &&
+             isIntRange(data, 'quantity', 1, 10000000) &&
+             isNumRange(data, 'totalCost', 0, 1000000000) &&
+             (data.status in ['ORDERED', 'RECEIVED', 'CANCELLED']);
+    }
+
+    function isValidSalesOrder(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'orderNumber', 1, 60) &&
+             isReqStr(data, 'customerName', 1, 120) &&
+             isReqStr(data, 'productName', 1, 150) &&
+             isIntRange(data, 'quantity', 1, 10000000) &&
+             isNumRange(data, 'subtotal', 0, 1000000000) &&
+             isNumRange(data, 'discountPercent', 0, 100) &&
+             isNumRange(data, 'totalAmount', 0, 1000000000) &&
+             isReqStr(data, 'monthLabel', 1, 20) &&
+             (data.status in ['PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED']);
+    }
+
+    function isValidMarketingCampaign(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'name', 1, 150) &&
+             (data.channel in ['EMAIL', 'SOCIAL_MEDIA', 'PAID_ADS', 'SEO']) &&
+             (data.status in ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED']) &&
+             isNumRange(data, 'budget', 0, 1000000000) &&
+             isIntRange(data, 'impressions', 0, 1000000000) &&
+             isIntRange(data, 'clicks', 0, 1000000000) &&
+             isIntRange(data, 'conversions', 0, 1000000000) &&
+             isOptStr(data, 'notes', 1000);
+    }
+
+    function isValidSupportTicket(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'ticketNumber', 1, 60) &&
+             isReqStr(data, 'customerName', 1, 120) &&
+             isReqStr(data, 'subject', 1, 200) &&
+             isOptStr(data, 'description', 1500) &&
+             (data.priority in ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']) &&
+             (data.status in ['OPEN', 'IN_PROGRESS', 'WAITING', 'RESOLVED', 'CLOSED']) &&
+             isOptStr(data, 'assignedAgent', 120) &&
+             isOptStr(data, 'resolutionNotes', 1000);
+    }
+
+    function isValidActivityLog(data) {
+      return isReqStr(data, 'userId', 1, 128) &&
+             isReqStr(data, 'businessId', 1, 128) &&
+             isReqStr(data, 'actorName', 1, 120) &&
+             isReqStr(data, 'actorRole', 1, 60) &&
+             isReqStr(data, 'module', 1, 60) &&
+             isReqStr(data, 'action', 1, 60) &&
+             isReqStr(data, 'summary', 1, 300) &&
+             (data.unread is bool);
+    }
+
+    // --- Collection Rules ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'jobTitle', 'phone', 'activeBusinessId', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'jobTitle', 'phone', 'activeBusinessId', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Businesses owned by the user
+      match /businesses/{businessId} {
+        allow get: if isOwner(userId) && isValidId(businessId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(businessId) &&
+                         isValidBusiness(incoming()) &&
+                         incoming().ownerId == userId &&
+                         incoming().keys().hasAll(['ownerId', 'name', 'industry', 'currency', 'activeRole', 'demoSeeded', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['ownerId', 'name', 'industry', 'currency', 'taxRate', 'address', 'email', 'activeRole', 'demoSeeded', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(businessId) &&
+                         isValidBusiness(incoming()) &&
+                         incoming().ownerId == existing().ownerId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'industry', 'currency', 'taxRate', 'address', 'email', 'activeRole', 'demoSeeded', 'updatedAt']);
+
+        allow delete: if isOwner(userId) && isValidId(businessId);
+
+        // CRM Leads
+        match /crm_leads/{leadId} {
+          allow get: if isOwner(userId) && isValidId(leadId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(leadId) &&
+                           isValidCrmLead(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'name', 'company', 'stage', 'dealValue', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'name', 'company', 'email', 'phone', 'source', 'stage', 'dealValue', 'nextFollowUp', 'notes', 'assignedTo', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(leadId) &&
+                           isValidCrmLead(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'company', 'email', 'phone', 'source', 'stage', 'dealValue', 'nextFollowUp', 'notes', 'assignedTo', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(leadId);
+        }
+
+        // CRM Contacts
+        match /crm_contacts/{contactId} {
+          allow get: if isOwner(userId) && isValidId(contactId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(contactId) &&
+                           isValidCrmContact(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'name', 'company', 'status', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'name', 'company', 'roleTitle', 'email', 'phone', 'status', 'activityHistory', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(contactId) &&
+                           isValidCrmContact(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'company', 'roleTitle', 'email', 'phone', 'status', 'activityHistory', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(contactId);
+        }
+
+        // Finance Records
+        match /finance_records/{recordId} {
+          allow get: if isOwner(userId) && isValidId(recordId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(recordId) &&
+                           isValidFinanceRecord(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'title', 'type', 'category', 'amount', 'dateStr', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'title', 'type', 'category', 'amount', 'dateStr', 'paymentMethod', 'notes', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(recordId) &&
+                           isValidFinanceRecord(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'type', 'category', 'amount', 'dateStr', 'paymentMethod', 'notes', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(recordId);
+        }
+
+        // Invoices & Estimates
+        match /invoices/{invoiceId} {
+          allow get: if isOwner(userId) && isValidId(invoiceId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(invoiceId) &&
+                           isValidInvoice(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'invoiceNumber', 'customerName', 'docType', 'amount', 'status', 'dueDate', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'invoiceNumber', 'customerName', 'docType', 'amount', 'taxAmount', 'status', 'dueDate', 'notes', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(invoiceId) &&
+                           isValidInvoice(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['invoiceNumber', 'customerName', 'docType', 'amount', 'taxAmount', 'status', 'dueDate', 'notes', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(invoiceId);
+        }
+
+        // HR Employees
+        match /employees/{employeeId} {
+          allow get: if isOwner(userId) && isValidId(employeeId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(employeeId) &&
+                           isValidEmployee(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'fullName', 'department', 'jobTitle', 'role', 'salary', 'attendanceStatus', 'leaveBalanceDays', 'leaveRequestStatus', 'performanceScore', 'payrollStatus', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'fullName', 'email', 'department', 'jobTitle', 'role', 'salary', 'attendanceStatus', 'leaveBalanceDays', 'leaveRequestStatus', 'performanceScore', 'payrollStatus', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(employeeId) &&
+                           isValidEmployee(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'email', 'department', 'jobTitle', 'role', 'salary', 'attendanceStatus', 'leaveBalanceDays', 'leaveRequestStatus', 'performanceScore', 'payrollStatus', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(employeeId);
+        }
+
+        // Projects
+        match /projects/{projectId} {
+          allow get: if isOwner(userId) && isValidId(projectId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(projectId) &&
+                           isValidProject(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'name', 'status', 'deadline', 'progressPercent', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'name', 'description', 'status', 'deadline', 'memberNames', 'progressPercent', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(projectId) &&
+                           isValidProject(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'status', 'deadline', 'memberNames', 'progressPercent', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(projectId);
+        }
+
+        // Project Tasks (Kanban & Reminders)
+        match /project_tasks/{taskId} {
+          allow get: if isOwner(userId) && isValidId(taskId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(taskId) &&
+                           isValidProjectTask(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'projectId', 'projectName', 'title', 'priority', 'kanbanColumn', 'dueDate', 'reminderActive', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'projectId', 'projectName', 'title', 'subtasksSummary', 'assignee', 'priority', 'kanbanColumn', 'dueDate', 'reminderActive', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(taskId) &&
+                           isValidProjectTask(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['projectId', 'projectName', 'title', 'subtasksSummary', 'assignee', 'priority', 'kanbanColumn', 'dueDate', 'reminderActive', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(taskId);
+        }
+
+        // Inventory Products
+        match /inventory_products/{productId} {
+          allow get: if isOwner(userId) && isValidId(productId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(productId) &&
+                           isValidInventoryProduct(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'sku', 'name', 'category', 'supplierName', 'unitPrice', 'stockQty', 'reorderLevel', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'sku', 'name', 'category', 'supplierName', 'unitPrice', 'stockQty', 'reorderLevel', 'lastMovementNote', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(productId) &&
+                           isValidInventoryProduct(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'category', 'supplierName', 'unitPrice', 'stockQty', 'reorderLevel', 'lastMovementNote', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(productId);
+        }
+
+        // Purchase Orders
+        match /purchase_orders/{poId} {
+          allow get: if isOwner(userId) && isValidId(poId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(poId) &&
+                           isValidPurchaseOrder(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'poNumber', 'supplierName', 'productName', 'quantity', 'totalCost', 'status', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'poNumber', 'supplierName', 'productId', 'productName', 'quantity', 'totalCost', 'status', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(poId) &&
+                           isValidPurchaseOrder(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['poNumber', 'supplierName', 'productId', 'productName', 'quantity', 'totalCost', 'status', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(poId);
+        }
+
+        // Sales Orders
+        match /sales_orders/{orderId} {
+          allow get: if isOwner(userId) && isValidId(orderId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(orderId) &&
+                           isValidSalesOrder(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'orderNumber', 'customerName', 'productName', 'quantity', 'subtotal', 'discountPercent', 'totalAmount', 'monthLabel', 'status', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'orderNumber', 'customerName', 'productName', 'quantity', 'subtotal', 'discountPercent', 'totalAmount', 'monthLabel', 'status', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(orderId) &&
+                           isValidSalesOrder(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['orderNumber', 'customerName', 'productName', 'quantity', 'subtotal', 'discountPercent', 'totalAmount', 'monthLabel', 'status', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(orderId);
+        }
+
+        // Marketing Campaigns
+        match /marketing_campaigns/{campaignId} {
+          allow get: if isOwner(userId) && isValidId(campaignId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(campaignId) &&
+                           isValidMarketingCampaign(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'name', 'channel', 'status', 'budget', 'impressions', 'clicks', 'conversions', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'name', 'channel', 'status', 'budget', 'impressions', 'clicks', 'conversions', 'notes', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(campaignId) &&
+                           isValidMarketingCampaign(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'channel', 'status', 'budget', 'impressions', 'clicks', 'conversions', 'notes', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(campaignId);
+        }
+
+        // Support Tickets
+        match /support_tickets/{ticketId} {
+          allow get: if isOwner(userId) && isValidId(ticketId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(ticketId) &&
+                           isValidSupportTicket(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'ticketNumber', 'customerName', 'subject', 'priority', 'status', 'createdAt', 'updatedAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'ticketNumber', 'customerName', 'subject', 'description', 'priority', 'status', 'assignedAgent', 'resolutionNotes', 'createdAt', 'updatedAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(ticketId) &&
+                           isValidSupportTicket(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           isValidTimestamp(incoming().updatedAt) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['ticketNumber', 'customerName', 'subject', 'description', 'priority', 'status', 'assignedAgent', 'resolutionNotes', 'updatedAt']);
+
+          allow delete: if isOwner(userId) && isValidId(ticketId);
+        }
+
+        // Activity Logs & Notifications
+        match /activity_logs/{logId} {
+          allow get: if isOwner(userId) && isValidId(logId);
+          allow list: if isOwner(userId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(logId) &&
+                           isValidActivityLog(incoming()) &&
+                           incoming().userId == userId &&
+                           incoming().businessId == businessId &&
+                           incoming().keys().hasAll(['userId', 'businessId', 'actorName', 'actorRole', 'module', 'action', 'summary', 'unread', 'createdAt']) &&
+                           incoming().keys().hasOnly(['userId', 'businessId', 'actorName', 'actorRole', 'module', 'action', 'summary', 'unread', 'createdAt']) &&
+                           isValidTimestamp(incoming().createdAt) &&
+                           businessExists(userId, businessId);
+
+          allow update: if isOwner(userId) &&
+                           isValidId(logId) &&
+                           isValidActivityLog(incoming()) &&
+                           incoming().userId == existing().userId &&
+                           incoming().businessId == existing().businessId &&
+                           incoming().createdAt == existing().createdAt &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['unread']);
+
+          allow delete: if isOwner(userId) && isValidId(logId);
+        }
+      }
+    }
+  }
+}
